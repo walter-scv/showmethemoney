@@ -1,0 +1,224 @@
+# Multi-Agent E2E Test Automation
+
+You are the **Orchestrator**. Spawn agents via `Task(subagent_type="general-purpose")` with rules from `.claude/agents/*.md`, and invoke reviewer skills via `Skill()`.
+
+## Command Format
+
+```
+/automate-multi e2e "<description>" --url <target_url>
+```
+
+## Workflow Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     ORCHESTRATOR                         │
+│  Agents: .claude/agents/*.md → Task(general-purpose)    │
+│  Reviews: .claude/skills/review-* → Skill()             │
+└─────────────────────────────────────────────────────────┘
+                            │
+════════════════════════════════════════════════
+                  PHASE 1: DISCOVERY
+════════════════════════════════════════════════
+                            │
+                  ┌──────────────┐
+                  │ 1.1 Search   │  ← ORCHESTRATOR DIRECT (Glob + Grep)
+                  └──────┬───────┘
+                         │
+════════════════════════════════════════════════
+                  PHASE 2: PLANNING
+════════════════════════════════════════════════
+                         │
+                  ┌──────────────┐
+                  │ 2.1 Planner  │  → planner.md (sonnet)
+                  └──────┬───────┘
+                         │
+                  ┌──────────────┐
+                  │ 2.1b Review  │  → review-plan skill (BLOCKING)
+                  └──────┬───────┘
+                         │
+                  ┌──────────────┐
+                  │ 2.2 MCP      │  ← ORCHESTRATOR DIRECT (selectors)
+                  └──────┬───────┘
+                         │
+════════════════════════════════════════════════
+                  PHASE 3: BUILDING
+════════════════════════════════════════════════
+                         │
+                  ┌──────────────┐
+                  │ 3.1 Builder  │  → builder.md (sonnet)
+                  └──────┬───────┘
+                         │
+              ┌──────────┼──────────┐
+              ▼          ▼          ▼
+        /review-pom /review-test /review-plan (PARALLEL)
+              └──────────┼──────────┘
+                         │
+                  ┌──────────────┐
+                  │ 3.3 Writer   │  → writer-tests.md (🚨 ONLY writes *.spec.ts)
+                  └──────┬───────┘
+                         │
+════════════════════════════════════════════════
+                  PHASE 4: VALIDATION
+════════════════════════════════════════════════
+                         │
+                  ┌──────────────┐
+                  │ 4.1 Run tests│  npx playwright test
+                  └──────┬───────┘
+                         │
+                  ┌──────────────┐
+                  │ 4.2 Cleanup  │  → cleanup.md (haiku)
+                  └──────────────┘
+```
+
+---
+
+## EXECUTION STEPS
+
+### Initialize
+
+Extract: `task_type`, `description`, `url` from command arguments.
+
+### MANDATORY: Create TodoList
+
+**BEFORE starting**, create full TodoList with `TaskCreate`:
+
+```
+#1  Phase 1.1: Search codebase
+#2  Phase 2.1: Plan scenarios                  (blockedBy: #1)
+#3  Phase 2.1b: Review plan (BLOCKING GATE)    (blockedBy: #2)
+#4  Phase 2.2: MCP selector discovery          (blockedBy: #3)
+#5  Phase 3.1: Build page object + test code   (blockedBy: #4)
+#6  Phase 3.2: Run parallel reviews            (blockedBy: #5)
+#7  Phase 3.3: Writer writes test files        (blockedBy: #6)
+#8  Phase 4.1: Run playwright tests            (blockedBy: #7)
+#9  Phase 4.2: Cleanup temp files              (blockedBy: #8)
+```
+
+---
+
+## PHASE 1: DISCOVERY
+
+### 1.1 Direct Search (Orchestrator)
+
+```
+Glob("tests/**/*{keyword}*.spec.ts")   → existing test files
+Glob("pages/**/*{keyword}*.ts")        → existing page objects
+```
+
+---
+
+## PHASE 2: PLANNING
+
+### 2.1 Planner
+
+```
+Read(.claude/agents/planner.md)
+Task(subagent_type="general-purpose", model="sonnet",
+  prompt="[planner.md]\n\n## Task: [description]\n## Existing tests: [1.1 results]")
+```
+
+### 2.1b Plan Review (BLOCKING GATE)
+
+Save plan and invoke skill:
+```
+Write(.claude/temp/plan.json, [planner output])
+Skill(skill="review-plan", args=".claude/temp/plan.json")
+```
+
+**Decision:**
+- `APPROVED` → Save to `.claude/approved-plan.json`, continue
+- `REJECTED` → Back to 2.1 (max 3 iterations)
+
+### 2.2 MCP Selector Discovery (Orchestrator)
+
+1. `mcp__playwright__browser_navigate` → target URL
+2. `mcp__playwright__browser_wait_for` → loaded
+3. `mcp__playwright__browser_snapshot` → capture UI
+4. Extract verified selectors (condensed ~200 tokens)
+5. `mcp__playwright__browser_close`
+
+Save: `Write(.claude/temp/selectors.json, [verified_selectors])`
+
+---
+
+## PHASE 3: BUILDING
+
+### 3.1 Builder
+
+```
+Read(.claude/agents/builder.md)
+Task(subagent_type="general-purpose", model="sonnet",
+  prompt="[builder.md]\n\n## Scenarios: [from 2.1]\n## Selectors: [from 2.2]")
+```
+
+Save output:
+```
+Write(.claude/temp/pending_page_object.ts, [PO code])
+Write(.claude/temp/pending_test.spec.ts, [Test code])
+```
+
+### 3.2 Parallel Reviews (3 Skills)
+
+Launch IN PARALLEL in a SINGLE message:
+```
+Skill(skill="review-pom", args=".claude/temp/pending_page_object.ts .claude/temp/selectors.json")
+Skill(skill="review-test", args=".claude/temp/pending_test.spec.ts")
+Skill(skill="review-plan", args=".claude/temp/plan.json")
+```
+
+**Decision:**
+- ALL `APPROVED` → Proceed to 3.3
+- ANY `REJECTED` → Fix and re-run Builder (max 2 iterations)
+
+### 3.3 Writer Agent (🚨 PHYSICAL SEPARATION)
+
+**RESTRICTION**: Orchestrator CANNOT write `*.spec.ts` files directly.
+
+```
+Read(.claude/agents/writer-tests.md)
+Task(subagent_type="general-purpose", model="sonnet",
+  prompt="[writer-tests.md]\n\n## Approved Plan: .claude/approved-plan.json\n## Pending: .claude/temp/")
+```
+
+Writer validates ALL smoke/p0 tests are present → writes final files.
+
+**Page Objects**: Orchestrator CAN write `.ts` page objects directly.
+
+---
+
+## PHASE 4: VALIDATION
+
+### 4.1 Test Execution (BLOCKING)
+
+```bash
+npx playwright test tests/path/to/new.spec.ts --project=chromium
+```
+
+- `PASS` → Mark completed, proceed to 4.2
+- `FAIL` → Fix and re-run (max 3 iterations) → Escalate if still failing
+- **`--list` is NOT execution. Must run actual tests.**
+
+### 4.2 Cleanup (MANDATORY)
+
+```
+Read(.claude/agents/cleanup.md)
+Task(subagent_type="general-purpose", model="haiku",
+  prompt="[cleanup.md]\n\n## Workflow Status: [SUCCESS|FAILED|ESCALATED]")
+```
+
+---
+
+## KEY RULES
+
+- **1.1**: Orchestrator direct (Glob + Grep)
+- **2.1**: planner.md agent
+- **2.1b**: review-plan skill — **BLOCKING GATE**
+- **2.2**: Orchestrator direct with MCP
+- **3.1**: builder.md agent
+- **3.2**: 3 review skills IN PARALLEL (single message)
+- **3.3**: writer-tests.md — **🚨 ONLY agent that writes *.spec.ts**
+- **4.1**: Actual `npx playwright test` run
+- **4.2**: cleanup.md (haiku)
+
+**DO NOT write test files until ALL reviews pass.**
