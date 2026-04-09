@@ -20,3 +20,6 @@ node_modules/
 # Claude temp workflow files
 .claude/temp/
 .claude/approved-plan.json
+
+# macOS
+.DS_Store
