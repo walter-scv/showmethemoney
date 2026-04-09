@@ -65,10 +65,12 @@ Verify all three are present:
 ```ts
 forbidOnly: !!process.env.CI
 retries: process.env.CI ? 2 : 0
-workers: process.env.CI ? 1 : undefined
+workers: process.env.CI ? (Number(process.env.WORKERS) || 2) : undefined
 ```
 
 **FAIL action**: Add any missing lines to the `defineConfig({})` block.
+
+> `WORKERS` is injected by the workflow as an env var — the manual workflow exposes it as a `workflow_dispatch` input (1/2/4/8, default 2), the daily regression hardcodes it to 2.
 
 ---
 
@@ -142,7 +144,7 @@ Read `.gitignore` and verify `/allure-results/` or `allure-results/` is present.
 
 Check if `.github/workflows/e2e-tests.yml` exists.
 
-**PASS condition**: File exists and contains `workflow_dispatch` trigger with `tag` input.
+**PASS condition**: File exists and contains `workflow_dispatch` trigger with `tag` input and `workers` input (options: 1/2/4/8, default 2). The run step must pass `WORKERS: ${{ inputs.workers }}` as env var.
 
 **FAIL action**: Copy template verbatim:
 ```
@@ -156,7 +158,7 @@ Check if `.github/workflows/e2e-tests.yml` exists.
 
 Check if `.github/workflows/daily-regression.yml` exists.
 
-**PASS condition**: File exists and contains `schedule` trigger with a cron expression.
+**PASS condition**: File exists and contains `schedule` trigger with a cron expression. The run step must pass `WORKERS: 2` as env var (hardcoded, no input).
 
 **FAIL action**: Copy template verbatim:
 ```
