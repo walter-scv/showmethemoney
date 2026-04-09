@@ -78,33 +78,89 @@ Test the main flows you discover:
 - Error paths (invalid data, missing fields)
 - Edge cases (empty states, boundary values)
 
-### 5. Report Findings
+### 5. Write Specs File (MANDATORY)
 
-**Summary structure:**
-```
-## Exploration Summary: [feature/page]
+After exploration, **always** write a spec document to `docs/specs/`.
 
-### Pages Found
-- / → [description]
-- /login → [description]
-- /dashboard → [description]
+**File naming**: `docs/specs/<feature-or-page>.md`
+Examples:
+- `docs/specs/home.md`
+- `docs/specs/portfolio.md`
+- `docs/specs/login.md`
 
-### Key Elements Discovered
+**File structure:**
+
+```markdown
+# [Feature / Page Name]
+
+> Explored: YYYY-MM-DD
+> URL: [page URL]
+
+---
+
+## Overview
+
+[2-4 sentences describing what this feature does, who uses it, and why it exists]
+
+---
+
+## Use Cases
+
+### UC-1: [Name]
+**Actor**: [who]
+**Goal**: [what they want to achieve]
+
+**Main flow**:
+1. [step]
+2. [step]
+3. [step]
+
+**Expected result**: [what happens when everything goes right]
+
+---
+
+### UC-2: [Name]
+...
+
+---
+
+## Edge Cases & Border Behaviors
+
+- **[Condition]**: [what happens] — ✅ correct / ❌ bug / ⚠️ unclear
+- **[Condition]**: [what happens]
+
+Examples:
+- Empty state (no data): [behavior]
+- Maximum values: [behavior]
+- Invalid input: [behavior]
+- Network error: [behavior]
+
+---
+
+## Issues Found
+
+| # | Severity | Description |
+|---|----------|-------------|
+| 1 | High/Medium/Low | [description] |
+
+---
+
+## Technical Notes (optional)
+
+Elements and selectors discovered during exploration — useful for test automation.
+
 | Element | Selector | Notes |
 |---------|----------|-------|
-
-### Flows Tested
-| Flow | Result | Notes |
-|------|--------|-------|
-
-### Issues Found
-| Issue | Severity | Description |
-|-------|----------|-------------|
-
-### Recommended Test Scenarios
-1. [scenario name] — [description]
-2. [scenario name] — [description]
+| [name] | `getByRole(...)` | [notes] |
 ```
+
+**Rules for writing specs:**
+- One file per feature/page explored
+- If file already exists → append new findings, don't overwrite
+- Focus on BEHAVIOR, not implementation
+- Document ALL edge cases observed, even if they work correctly
+- Issues section only for bugs or unexpected behavior
+- Technical Notes section is optional — only include if selectors were verified via MCP
 
 ---
 

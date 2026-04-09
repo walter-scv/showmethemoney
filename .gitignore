@@ -6,3 +6,10 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Playwright MCP snapshots and logs (generated during exploratory sessions)
+.playwright-mcp/
+
+# Claude temp workflow files
+.claude/temp/
+.claude/approved-plan.json
