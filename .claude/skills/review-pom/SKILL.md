@@ -11,8 +11,8 @@ agent: general-purpose
 ## Invocation Rules
 
 **Only invoked by:**
-- `/automate-multi` workflow (phase 3.2)
-- `/automate` workflow (during code review)
+- `/automate-multi-ts` workflow (phase 3.2)
+- `/automate-ts` workflow (during code review)
 
 ---
 
@@ -29,7 +29,8 @@ agent: general-purpose
 ## Purpose
 
 Review Page Object implementations against Playwright TypeScript patterns. Ensure:
-- Proper class structure
+- Extends `BasePage` from `pages/BasePage.ts`
+- Uses `TIMEOUTS` constants — no hardcoded numbers
 - Locators in constructor only
 - Logic belongs in page objects (not tests)
 - No forbidden patterns
@@ -41,10 +42,11 @@ Review Page Object implementations against Playwright TypeScript patterns. Ensur
 ### Structure (Critical)
 
 ```
-- [ ] Class exported with `export class`
-- [ ] Constructor receives `page: Page`
-- [ ] URL defined in constructor
-- [ ] Implements navigate() method
+- [ ] Class extends BasePage: `export class FeaturePage extends BasePage`
+- [ ] Imports BasePage AND TIMEOUTS: `import { BasePage, TIMEOUTS } from './BasePage'`
+- [ ] Constructor calls `super(page, url)` — does NOT redeclare `this.page` or `this.url`
+- [ ] Does NOT override `navigate()` unless adding extra logic beyond goto
+- [ ] pages/BasePage.ts exists in the project
 ```
 
 ### Locators — ALL in constructor (Critical)
@@ -58,14 +60,16 @@ Review Page Object implementations against Playwright TypeScript patterns. Ensur
   2. getByRole('...', { name: '...' }) — semantic role
   3. getByLabel('...') — form fields
   4. getByPlaceholder('...') — inputs
-  5. getByText('...') — last resort
+  5. locator('tag', { hasText }) — when inner elements shadow text
+  6. getByText('...') — last resort
 ```
 
 ### Forbidden Patterns (Critical)
 
 ```
-- [ ] NO .nth(n) without justification
-- [ ] NO CSS class selectors (.class-name)
+- [ ] NO hardcoded timeout numbers (2000, 5000, 10000) — use TIMEOUTS.short/standard/long
+- [ ] NO .nth(n) without justification comment
+- [ ] NO CSS class selectors (.class-name) without justification comment
 - [ ] NO XPath
 - [ ] NO page.waitForTimeout()
 - [ ] NO hardcoded credentials
@@ -76,8 +80,9 @@ Review Page Object implementations against Playwright TypeScript patterns. Ensur
 ```
 - [ ] Single responsibility per method
 - [ ] Data extraction / parsing logic HERE (not in tests)
-- [ ] Proper TypeScript return types
-- [ ] Async methods properly typed
+- [ ] Proper TypeScript return types on all public methods
+- [ ] Async methods properly typed as Promise<T>
+- [ ] waitFor() calls use TIMEOUTS.* constants
 ```
 
 ---
@@ -86,32 +91,25 @@ Review Page Object implementations against Playwright TypeScript patterns. Ensur
 
 ```typescript
 import { Page, Locator } from '@playwright/test';
+import { BasePage, TIMEOUTS } from './BasePage';
 
-export class FeaturePage {
-  readonly page: Page;
-  readonly url: string;
-
+export class FeaturePage extends BasePage {
   // ALL locators here
   readonly submitButton: Locator;
   readonly emailInput: Locator;
 
   constructor(page: Page) {
-    this.page = page;
-    this.url = 'https://sea-lion-app-7celq.ondigitalocean.app/path';
+    super(page, 'https://sea-lion-app-7celq.ondigitalocean.app/path');
 
     this.submitButton = page.getByRole('button', { name: 'Submit' });
     this.emailInput = page.getByLabel('Email');
   }
 
-  async navigate() {
-    await this.page.goto(this.url);
-  }
-
-  async fillEmail(email: string) {
+  async fillEmail(email: string): Promise<void> {
+    await this.emailInput.waitFor({ state: 'visible', timeout: TIMEOUTS.standard });
     await this.emailInput.fill(email);
   }
 
-  // Logic belongs HERE
   async getErrorText(): Promise<string> {
     return (await this.errorMessage.textContent()) ?? '';
   }
@@ -128,19 +126,19 @@ export class FeaturePage {
   "artifact_path": ".claude/temp/pending_page_object.ts",
   "verdict": "APPROVED | REJECTED",
   "checklist_results": {
-    "structure": {"passed": 4, "failed": 0},
+    "structure": {"passed": 5, "failed": 0},
     "locators": {"passed": 5, "failed": 0},
-    "forbidden_patterns": {"passed": 4, "failed": 0},
+    "forbidden_patterns": {"passed": 5, "failed": 0},
     "methods": {"passed": 3, "failed": 0}
   },
   "issues": [
     {
       "severity": "critical",
       "line": 35,
-      "category": "locators",
-      "code": "const btn = this.page.locator(...)",
-      "description": "Locator defined in method instead of constructor",
-      "suggestion": "Move to constructor as readonly property"
+      "category": "structure",
+      "code": "export class FeaturePage {",
+      "description": "Does not extend BasePage",
+      "suggestion": "Change to: export class FeaturePage extends BasePage"
     }
   ],
   "critical_count": 0,
@@ -154,12 +152,15 @@ export class FeaturePage {
 ## Severity Levels
 
 ### Critical (Blocks Approval)
+- Does NOT extend `BasePage`
+- Does NOT import `TIMEOUTS` from BasePage
+- Hardcoded timeout numbers (use `TIMEOUTS.*`)
 - Locators defined in methods (not constructor)
 - `page.waitForTimeout()` usage
-- CSS class selectors
+- CSS class selectors without justification comment
 - Missing TypeScript types on public methods
 
 ### Warning (Should Fix)
-- Missing return type annotations
+- Missing return type annotations on private methods
 - Role-based selector when data-testid might exist
 - Unverified selectors (if selectors file provided)

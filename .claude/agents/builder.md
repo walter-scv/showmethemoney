@@ -35,22 +35,22 @@ context: [scenarios, selectors, or requirements]
 
 ## Page Object Pattern
 
+All page objects **MUST extend `BasePage`** (`pages/BasePage.ts`).
+`BasePage` provides `page`, `url`, and `navigate()` — never redeclare them.
+
 ```typescript
 // pages/FeaturePage.ts
 import { Page, Locator } from '@playwright/test';
+import { BasePage } from './BasePage';
 
-export class FeaturePage {
-  readonly page: Page;
-  readonly url: string;
-
+export class FeaturePage extends BasePage {
   // ALL locators defined here
   readonly submitButton: Locator;
   readonly emailInput: Locator;
   readonly errorMessage: Locator;
 
   constructor(page: Page) {
-    this.page = page;
-    this.url = 'https://sea-lion-app-7celq.ondigitalocean.app/path';
+    super(page, 'https://sea-lion-app-7celq.ondigitalocean.app/path');
 
     // Locators — data-testid first, role-based fallback
     this.submitButton = page.getByRole('button', { name: 'Submit' });
@@ -58,15 +58,11 @@ export class FeaturePage {
     this.errorMessage = page.getByRole('alert');
   }
 
-  async navigate() {
-    await this.page.goto(this.url);
-  }
-
-  async fillEmail(email: string) {
+  async fillEmail(email: string): Promise<void> {
     await this.emailInput.fill(email);
   }
 
-  async submit() {
+  async submit(): Promise<void> {
     await this.submitButton.click();
   }
 
@@ -81,10 +77,12 @@ export class FeaturePage {
 
 ## Test Pattern
 
+**ALWAYS import `test` and `expect` from `../base-test` — NEVER from `@playwright/test` directly.**
+
 ```typescript
-// tests/feature.spec.ts
-import { test, expect } from '@playwright/test';
-import { FeaturePage } from '../pages/FeaturePage';
+// tests/feature/feature.spec.ts
+import { test, expect } from '../base-test';
+import { FeaturePage } from '../../pages/FeaturePage';
 
 test.describe('Feature Name @feature', () => {
 
@@ -109,19 +107,24 @@ test.describe('Feature Name @feature', () => {
 ## Critical Rules
 
 ### For Page Objects
+- **Extend `BasePage`** — always (`import { BasePage, TIMEOUTS } from './BasePage'`)
+- **Verify `pages/BasePage.ts` exists** before generating — if missing, generate it first
 - ALL locators in constructor
 - `data-testid` first, then `getByRole`, then `getByLabel`, then `getByText`
-- NO `page.waitForTimeout()` — use `waitFor` with state options
+- NO `page.waitForTimeout()` — use `waitFor` with state options and `TIMEOUTS.*` constants
+- NO hardcoded timeout numbers — always use `TIMEOUTS.short`, `TIMEOUTS.standard`, `TIMEOUTS.long`
 - Data extraction / parsing logic belongs HERE, not in tests
 - NO hardcoded credentials
 
 ### For Tests
+- **Import from `../base-test`** — never from `@playwright/test` directly
 - NO logic in tests (no parsing, loops, conditionals)
 - AAA pattern: Arrange → Act → Assert
 - Tags in test title: `@smoke`, `@p0`, `@p1`, `@auth`, etc.
 - ONE test per page/flow — consolidate validations, don't over-atomize
 - NEVER skip tests because data is missing — data must be set up beforehand
 - NEVER create test data ad-hoc inside tests
+- NO hardcoded timeout values — use `TIMEOUTS` constants from `BasePage`
 
 ### Selector Priority (STRICT ORDER)
 1. `page.getByTestId('...')` — when `data-testid` exists

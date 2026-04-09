@@ -36,29 +36,24 @@ showmethemoney/
 
 ## Page Object Rules (CRITICAL)
 
+All page objects **MUST extend `BasePage`** (`pages/BasePage.ts`).
+
 ```typescript
 // pages/FeaturePage.ts
 import { Page, Locator } from '@playwright/test';
+import { BasePage } from './BasePage';
 
-export class FeaturePage {
-  readonly page: Page;
-  readonly url: string;
-
+export class FeaturePage extends BasePage {
   // ALL locators as readonly properties
   readonly submitButton: Locator;
   readonly emailInput: Locator;
 
   constructor(page: Page) {
-    this.page = page;
-    this.url = 'https://sea-lion-app-7celq.ondigitalocean.app/path';
+    super(page, 'https://sea-lion-app-7celq.ondigitalocean.app/path');
 
     // Selector priority: data-testid > role > label > placeholder > text
     this.submitButton = page.getByRole('button', { name: 'Submit' });
     this.emailInput = page.getByLabel('Email');
-  }
-
-  async navigate() {
-    await this.page.goto(this.url);
   }
 
   // Data extraction logic belongs HERE
@@ -68,14 +63,17 @@ export class FeaturePage {
 }
 ```
 
+`BasePage` provides: `page`, `url`, and `navigate()` (with `networkidle`).
+
 ### Page Object DO
+- **Extend `BasePage`** — always
 - ALL locators as `readonly` class properties
 - ALL locators assigned in constructor
 - Data extraction / parsing logic in page object methods
 - Proper TypeScript return types on all methods
-- `navigate()` method on every page object
 
 ### Page Object DON'T
+- ❌ Declare `page` or `url` directly — they come from `BasePage`
 - ❌ Locators inside methods
 - ❌ `page.waitForTimeout()` — use `waitFor({ state: 'visible' })` instead
 - ❌ CSS class selectors (`.btn-primary`)

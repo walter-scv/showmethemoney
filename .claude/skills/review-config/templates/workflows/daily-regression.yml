@@ -1,0 +1,77 @@
+name: Daily E2E Regression
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # 6:00 AM UTC daily
+  workflow_dispatch:
+
+jobs:
+  daily-regression:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run full E2E regression
+        id: test-execution
+        continue-on-error: true
+        env:
+          BASE_URL: ${{ vars.BASE_URL || 'https://sea-lion-app-7celq.ondigitalocean.app' }}
+        run: npx playwright test --project=chromium
+
+      - name: Upload raw results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daily-allure-results-${{ github.run_number }}
+          path: allure-results/
+          retention-days: 7
+
+      - name: Publish Allure Report
+        id: publish-report
+        if: always()
+        uses: ./.github/actions/publish-allure
+        with:
+          allure-results-path: allure-results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          test-tag: all
+
+      - name: Send Slack Notification
+        if: always()
+        uses: ./.github/actions/slack-notification
+        with:
+          slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          execution-id: ${{ steps.publish-report.outputs.execution-id }}
+          repository-name: ${{ github.event.repository.name }}
+          trigger-type: Scheduled
+          triggered-by: Daily Cron Job
+          test-tag: all
+          test-results-path: test-results/results.json
+
+      - name: Fail job if tests failed
+        if: steps.test-execution.outcome == 'failure'
+        run: exit 1

@@ -118,15 +118,39 @@ La app "Show me the money!" es un simulador de inversiones personales. El usuari
 
 ---
 
+## Test Coverage
+
+> Automated: 2026-04-09  
+> Files: `tests/portfolio/portfolio.spec.ts` · `pages/PortfolioPage.ts`
+
+| ID | Test | Tags | UC | Status |
+|----|------|------|----|--------|
+| S1-S2 | portfolio page overview and asset detail panel | @smoke @p0 @portfolio | UC-1, UC-2 | ✅ Pass |
+| S3 | buy existing portfolio asset increases units and decreases balance | @smoke @p0 @portfolio | UC-3 | ✅ Pass |
+| S4 | buy new asset adds it to portfolio and shows vender spinbutton | @smoke @p0 @portfolio | UC-4 | ✅ Pass |
+| S5-S6 | sell all units removes asset from portfolio and restores balance | @smoke @p0 @portfolio | UC-5 | ✅ Pass |
+| S7 | buying beyond available balance results in negative balance (known bug) | @p1 @portfolio | Bug #1 | ✅ Pass (documents bug) |
+
+**Implementation notes:**
+- App uses Argentine locale format (`$ 42.000,00`) — parsing handled in `PortfolioPage`
+- Each buy/sell triggers an async "Operación en proceso..." → "Operación realizada." cycle — `waitForTransactionComplete()` handles this
+- After a transaction, the detail panel shows the result message and hides spinbuttons — tests re-click the asset to verify updated state
+- Vender spinbutton has `max` attribute set to owned units — spinbutton accepts values up to owned quantity
+- Comprar spinbutton has no `max` attribute — allows any quantity (hence the negative balance bug)
+
+---
+
 ## Technical Notes
 
 | Element | Selector | Notes |
 |---------|----------|-------|
-| Caja de ahorro (saldo) | `page.getByRole('paragraph').filter({ hasText: /^\$ / }).first()` | Segundo párrafo dentro del sidebar izquierdo |
-| Lista Mi portfolio | Botones con texto del nombre del activo (primer grupo del sidebar) | Los items del portfolio son clickeables |
-| Lista Inversiones disponibles | Botones con texto del nombre + precio `/unidad` | Segundo grupo del sidebar |
-| Spinbutton Comprar | `page.getByRole('spinbutton').first()` | Primer spinbutton en panel de detalle |
-| Spinbutton Vender | `page.getByRole('spinbutton').nth(1)` | Segundo spinbutton, solo visible si se posee el activo |
-| Botón Realizar compra | `page.getByRole('button', { name: 'Realizar compra' })` | Aparece al ingresar cantidad > 0 en Comprar |
-| Botón Realizar venta | `page.getByRole('button', { name: 'Realizar venta' })` | Aparece al ingresar cantidad > 0 en Vender |
-| Valor total cartera | Panel principal, visible cuando no hay activo seleccionado | Incluye gráfico de distribución |
+| Caja de ahorro (saldo) | `page.getByRole('complementary').locator('p').nth(1)` | Second `<p>` in sidebar — first is the label |
+| Mi portfolio asset buttons | `page.locator('.my-investments__items__name', { hasText: name })` | Scoped to portfolio section only |
+| Lista Inversiones disponibles | `page.getByRole('button', { name: 'Transportadora Gas del Norte' })` | Unique name = no disambiguation needed |
+| Spinbutton Comprar | `page.getByRole('spinbutton').first()` | No `max` attribute |
+| Spinbutton Vender | `page.getByRole('spinbutton').nth(1)` | `max` = owned units, only visible for portfolio assets |
+| Botón Realizar compra | `page.getByRole('button', { name: 'Realizar compra' })` | Appears after entering qty > 0 |
+| Botón Realizar venta | `page.getByRole('button', { name: 'Realizar venta' })` | Appears after entering qty > 0 |
+| Cotización | `page.locator('p', { hasText: /Cotización:/ })` | Must use `locator('p')` — inner `<strong>` shadows `getByText` |
+| Cantidad adquirida | `page.locator('p', { hasText: /Cantidad adquirida/ })` | Same — inner `<strong>` |
+| Valor total cartera | `page.getByText('Valor total cartera')` | Visible in main panel when no asset selected |

@@ -11,8 +11,8 @@ agent: general-purpose
 ## Invocation Rules
 
 **Only invoked by:**
-- `/automate-multi` workflow (phase 3.2)
-- `/automate` workflow (during code review)
+- `/automate-multi-ts` workflow (phase 3.2)
+- `/automate-ts` workflow (during code review)
 
 ---
 
@@ -20,7 +20,7 @@ agent: general-purpose
 
 ```
 /review-test $0
-             └── Pending test file (.claude/temp/pending_test.spec.ts)
+             └── Pending test file (.claude/temp/pending_test.ts)
 ```
 
 ---
@@ -28,6 +28,7 @@ agent: general-purpose
 ## Purpose
 
 Review test file structure, AAA pattern, and tag usage. Ensure:
+- Imports `test` and `expect` from `../base-test` (never from `@playwright/test`)
 - Proper `test.describe` / `test` structure
 - AAA pattern (Arrange-Act-Assert)
 - Tags in test title (@smoke, @p0, etc.)
@@ -41,18 +42,19 @@ Review test file structure, AAA pattern, and tag usage. Ensure:
 ### File Structure (Critical)
 
 ```
-- [ ] Uses `import { test, expect } from '@playwright/test'`
-- [ ] Page Objects imported from `../pages/`
+- [ ] Imports `test, expect` from `'../base-test'` — NOT from `@playwright/test`
+- [ ] Page Objects imported from `'../../pages/'` (relative depth matches file location)
 - [ ] Tests wrapped in `test.describe('Feature @tag', ...)`
 - [ ] Feature tag in describe block name
+- [ ] tests/base-test.ts exists in the project
 ```
 
 ### Test Method Level (Critical)
 
 ```
-- [ ] Priority tag in test title: @smoke, @p0, @p1, @p2
-- [ ] Descriptive test name
-- [ ] Uses Page Object (not raw page.locator() in test)
+- [ ] Priority tag in test title: @smoke, @p0, @p1, or @p2
+- [ ] Descriptive test name in business language
+- [ ] Uses Page Object — no raw page.locator() in test body
 ```
 
 ### AAA Pattern (Critical)
@@ -60,13 +62,15 @@ Review test file structure, AAA pattern, and tag usage. Ensure:
 ```
 ARRANGE:
 - [ ] Page object instantiated
-- [ ] Navigation to page
+- [ ] navigate() called at start
 
 ACT:
 - [ ] Performs the action being tested via page object methods
+- [ ] // ACT comment present before action block
 
 ASSERT:
 - [ ] expect() assertions validate outcome
+- [ ] // ASSERT comment present before assertions
 - [ ] Assertions use Playwright expect matchers
 ```
 
@@ -75,8 +79,9 @@ ASSERT:
 ```
 - [ ] NO parsing (split, trim, regex) in test file
 - [ ] NO loops (for, while) in test file
-- [ ] NO conditionals (if/else) for logic in test file
+- [ ] NO conditionals (if/else) in test file
 - [ ] NO string manipulation in test file
+- [ ] NO hardcoded timeout values
 - [ ] Simple expect() assertions only
 ```
 
@@ -86,7 +91,7 @@ ASSERT:
 - [ ] Tests target DIFFERENT pages/flows (not same page)
 - [ ] No standalone "navigation" tests
 - [ ] No tests that check a single element when others test same page
-- [ ] Ratio: If tests/pages > 2:1, likely over-atomized
+- [ ] Ratio: If tests/pages > 3:1 without exception, likely over-atomized
 ```
 
 ---
@@ -94,8 +99,8 @@ ASSERT:
 ## Expected Structure
 
 ```typescript
-import { test, expect } from '@playwright/test';
-import { LoginPage } from '../pages/LoginPage';
+import { test, expect } from '../base-test';          // ← base-test, NOT @playwright/test
+import { LoginPage } from '../../pages/LoginPage';
 
 test.describe('Login @auth', () => {
 
@@ -125,7 +130,7 @@ test.describe('Login @auth', () => {
 | Multiple tests, same URL, same flow | REJECT |
 | Single element test (`test_button_visible`) | REJECT |
 | Navigation-only test | REJECT |
-| Ratio tests/pages > 3 | REJECT |
+| Ratio tests/pages > 3 without justification | REJECT |
 
 ---
 
@@ -134,10 +139,10 @@ test.describe('Login @auth', () => {
 ```json
 {
   "reviewer": "review-test",
-  "artifact_path": ".claude/temp/pending_test.spec.ts",
+  "artifact_path": ".claude/temp/pending_test.ts",
   "verdict": "APPROVED | REJECTED",
   "checklist_results": {
-    "file_structure": {"passed": 4, "failed": 0},
+    "file_structure": {"passed": 5, "failed": 0},
     "aaa_pattern": {"passed": 3, "failed": 0},
     "no_logic": {"passed": 6, "failed": 0},
     "tags": {"passed": 2, "failed": 0}
@@ -160,13 +165,15 @@ test.describe('Login @auth', () => {
 ## Severity Levels
 
 ### Critical (Blocks Approval)
+- Imports from `@playwright/test` instead of `../base-test`
 - Missing AAA pattern
 - Logic in tests (parsing, loops, conditionals)
 - Raw `page.locator()` calls in tests (should use page objects)
-- Over-atomization (ratio > 3)
+- Over-atomization (ratio > 3 without exception)
 - Missing `expect()` assertions
+- Hardcoded timeout values in tests
 
 ### Warning (Should Fix)
 - Missing priority tags (@p0, @p1)
-- Steps not clearly separated with comments
+- AAA sections not clearly separated with comments
 - Borderline atomization (ratio 2-3)

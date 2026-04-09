@@ -7,6 +7,10 @@ node_modules/
 /playwright/.cache/
 /playwright/.auth/
 
+# Allure
+/allure-results/
+/allure-report/
+
 # Playwright MCP snapshots and logs (generated during exploratory sessions)
 .playwright-mcp/
 

@@ -25,6 +25,10 @@ You are the **Orchestrator**. Spawn agents via `Task(subagent_type="general-purp
                   │ 1.1 Search   │  ← ORCHESTRATOR DIRECT (Glob + Grep)
                   └──────┬───────┘
                          │
+                  ┌──────────────┐
+                  │ 1.2 Config   │  → review-config skill (only if gaps found)
+                  └──────┬───────┘
+                         │
 ════════════════════════════════════════════════
                   PHASE 2: PLANNING
 ════════════════════════════════════════════════
@@ -67,7 +71,11 @@ You are the **Orchestrator**. Spawn agents via `Task(subagent_type="general-purp
                   └──────┬───────┘
                          │
                   ┌──────────────┐
-                  │ 4.2 Cleanup  │  → cleanup.md (haiku)
+                  │ 4.2 Docs     │  Update docs/specs/<feature>.md
+                  └──────┬───────┘
+                         │
+                  ┌──────────────┐
+                  │ 4.3 Cleanup  │  → cleanup.md (haiku)
                   └──────────────┘
 ```
 
@@ -84,27 +92,57 @@ Extract: `task_type`, `description`, `url` from command arguments.
 **BEFORE starting**, create full TodoList with `TaskCreate`:
 
 ```
-#1  Phase 1.1: Search codebase
-#2  Phase 2.1: Plan scenarios                  (blockedBy: #1)
-#3  Phase 2.1b: Review plan (BLOCKING GATE)    (blockedBy: #2)
-#4  Phase 2.2: MCP selector discovery          (blockedBy: #3)
-#5  Phase 3.1: Build page object + test code   (blockedBy: #4)
-#6  Phase 3.2: Run parallel reviews            (blockedBy: #5)
-#7  Phase 3.3: Writer writes test files        (blockedBy: #6)
-#8  Phase 4.1: Run playwright tests            (blockedBy: #7)
-#9  Phase 4.2: Cleanup temp files              (blockedBy: #8)
+#1  Phase 1.1: Search codebase + verify BasePage/BaseTest exist
+#2  Phase 1.2: review-config skill (conditional)              (blockedBy: #1)
+#3  Phase 2.1: Plan scenarios                                  (blockedBy: #2)
+#4  Phase 2.1b: Review plan (BLOCKING GATE)                   (blockedBy: #3)
+#5  Phase 2.2: MCP selector discovery                         (blockedBy: #4)
+#6  Phase 3.1: Build page object + test code                  (blockedBy: #5)
+#7  Phase 3.2: Run parallel reviews                           (blockedBy: #6)
+#8  Phase 3.3: Writer writes test files                       (blockedBy: #7)
+#9  Phase 4.1: Run playwright tests                           (blockedBy: #8)
+#10 Phase 4.2: Update docs                                    (blockedBy: #9)
+#11 Phase 4.3: Cleanup temp files                             (blockedBy: #10)
 ```
 
 ---
 
 ## PHASE 1: DISCOVERY
 
-### 1.1 Direct Search (Orchestrator)
+### 1.1 Direct Search + Scaffolding Check (Orchestrator)
 
 ```
 Glob("tests/**/*{keyword}*.spec.ts")   → existing test files
 Glob("pages/**/*{keyword}*.ts")        → existing page objects
 ```
+
+**MANDATORY scaffolding check — before any generation:**
+
+```
+Glob("pages/BasePage.ts")     → MUST exist — if missing, create it first
+Glob("tests/base-test.ts")    → MUST exist — if missing, create it first
+```
+
+If either is missing, create it now before proceeding to Phase 1.2:
+
+**`pages/BasePage.ts`** must export `BasePage` (abstract class with `page`, `url`, `navigate()`) and `TIMEOUTS` constants (`short`, `standard`, `long`).
+
+**`tests/base-test.ts`** must re-export `test` (extended from `@playwright/test`) and `expect`.
+
+---
+
+### 1.2 Config Review (Orchestrator calls Skill — always)
+
+```
+Read(.claude/skills/review-config/SKILL.md)
+Skill(skill="review-config", args="playwright.config.ts")
+```
+
+The skill handles the conditional logic internally — if everything is already configured it returns `SKIPPED` immediately with no changes.
+
+**Decision:**
+- `SKIPPED` or `APPROVED_WITH_FIXES` → proceed to Phase 2
+- `REJECTED` → escalate to user before continuing
 
 ---
 
@@ -199,7 +237,20 @@ npx playwright test tests/path/to/new.spec.ts --project=chromium
 - `FAIL` → Fix and re-run (max 3 iterations) → Escalate if still failing
 - **`--list` is NOT execution. Must run actual tests.**
 
-### 4.2 Cleanup (MANDATORY)
+After tests pass, verify both reports were generated:
+```bash
+ls playwright-report/index.html
+ls allure-results/
+```
+
+### 4.2 Documentation Update (MANDATORY — blockedBy 4.1)
+
+Update or create `docs/specs/<feature>.md` with:
+- Overview of the feature tested
+- List of test scenarios added (id, name, tags, expected outcome)
+- Any bugs or edge cases documented during testing
+
+### 4.3 Cleanup (MANDATORY — blockedBy 4.2)
 
 ```
 Read(.claude/agents/cleanup.md)
@@ -211,14 +262,16 @@ Task(subagent_type="general-purpose", model="haiku",
 
 ## KEY RULES
 
-- **1.1**: Orchestrator direct (Glob + Grep)
+- **1.1**: Orchestrator direct — Glob + Grep + **BasePage/BaseTest scaffolding check**
+- **1.2**: `review-config` skill — **conditional** (only if config gaps detected in quick read)
 - **2.1**: planner.md agent
 - **2.1b**: review-plan skill — **BLOCKING GATE**
 - **2.2**: Orchestrator direct with MCP
-- **3.1**: builder.md agent
-- **3.2**: 3 review skills IN PARALLEL (single message)
+- **3.1**: builder.md agent — page objects extend BasePage, tests import base-test
+- **3.2**: 3 review skills IN PARALLEL (single message) — review-pom enforces BasePage/TIMEOUTS, review-test enforces base-test import
 - **3.3**: writer-tests.md — **🚨 ONLY agent that writes *.spec.ts**
-- **4.1**: Actual `npx playwright test` run
-- **4.2**: cleanup.md (haiku)
+- **4.1**: Actual `npx playwright test` run + verify `playwright-report/index.html` AND `allure-results/` generated
+- **4.2**: Update `docs/specs/<feature>.md`
+- **4.3**: cleanup.md (haiku)
 
 **DO NOT write test files until ALL reviews pass.**
