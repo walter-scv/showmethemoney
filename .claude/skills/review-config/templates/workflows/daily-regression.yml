@@ -41,6 +41,7 @@ jobs:
         continue-on-error: true
         env:
           BASE_URL: ${{ vars.BASE_URL || 'https://sea-lion-app-7celq.ondigitalocean.app' }}
+          WORKERS: 2
         run: npx playwright test --project=chromium
 
       - name: Upload raw results

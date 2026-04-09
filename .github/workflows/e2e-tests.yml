@@ -27,6 +27,16 @@ on:
           - 'retain-on-failure'
           - 'on'
           - 'off'
+      workers:
+        description: 'Parallel workers:'
+        required: true
+        default: '2'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '4'
+          - '8'
 
 jobs:
   test:
@@ -60,6 +70,7 @@ jobs:
         env:
           BASE_URL: ${{ vars.BASE_URL || 'https://sea-lion-app-7celq.ondigitalocean.app' }}
           VIDEO_MODE: ${{ inputs.video_mode }}
+          WORKERS: ${{ inputs.workers }}
         run: |
           if [ "${{ inputs.tag }}" = "all" ]; then
             npx playwright test --project=chromium
