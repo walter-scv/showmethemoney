@@ -26,7 +26,7 @@ You are the **Orchestrator**. Spawn agents via `Task(subagent_type="general-purp
                   └──────┬───────┘
                          │
                   ┌──────────────┐
-                  │ 1.2 Config   │  → review-config skill (only if gaps found)
+                  │ 1.2 Config   │  → review-config skill (always)
                   └──────┬───────┘
                          │
 ════════════════════════════════════════════════
@@ -93,7 +93,7 @@ Extract: `task_type`, `description`, `url` from command arguments.
 
 ```
 #1  Phase 1.1: Search codebase + verify BasePage/BaseTest exist
-#2  Phase 1.2: review-config skill (conditional)              (blockedBy: #1)
+#2  Phase 1.2: review-config skill                             (blockedBy: #1)
 #3  Phase 2.1: Plan scenarios                                  (blockedBy: #2)
 #4  Phase 2.1b: Review plan (BLOCKING GATE)                   (blockedBy: #3)
 #5  Phase 2.2: MCP selector discovery                         (blockedBy: #4)
@@ -263,7 +263,7 @@ Task(subagent_type="general-purpose", model="haiku",
 ## KEY RULES
 
 - **1.1**: Orchestrator direct — Glob + Grep + **BasePage/BaseTest scaffolding check**
-- **1.2**: `review-config` skill — **conditional** (only if config gaps detected in quick read)
+- **1.2**: `review-config` skill — **always called** (returns SKIPPED if nothing to do)
 - **2.1**: planner.md agent
 - **2.1b**: review-plan skill — **BLOCKING GATE**
 - **2.2**: Orchestrator direct with MCP
