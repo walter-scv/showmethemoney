@@ -1,0 +1,183 @@
+name: "Slack Notification"
+description: "Send test execution notifications to Slack with formatted Playwright results"
+
+inputs:
+  slack-webhook-url:
+    description: "Slack webhook URL"
+    required: true
+  execution-id:
+    description: "Execution ID for report links"
+    required: true
+  repository-name:
+    description: "Repository name"
+    required: true
+  trigger-type:
+    description: "Type of trigger (Manual, Scheduled)"
+    required: true
+  triggered-by:
+    description: "Who or what triggered the execution"
+    required: true
+  test-tag:
+    description: "Test tag that was executed (all, smoke, p0, portfolio)"
+    required: false
+    default: "all"
+  test-results-path:
+    description: "Path to Playwright JSON report file"
+    required: false
+    default: "test-results/results.json"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Parse Playwright results and send Slack notification
+      shell: bash
+      run: |
+        node << 'EOF'
+        const fs = require('fs');
+
+        const webhookUrl = process.env.SLACK_WEBHOOK_URL;
+        const executionId = process.env.EXECUTION_ID;
+        const repoName = process.env.REPO_NAME;
+        const triggerType = process.env.TRIGGER_TYPE;
+        const triggeredBy = process.env.TRIGGERED_BY;
+        const testTag = process.env.TEST_TAG || 'all';
+        const resultsPath = process.env.RESULTS_PATH || 'test-results/results.json';
+        const githubRunId = process.env.GITHUB_RUN_ID || '';
+        const githubOwner = process.env.GITHUB_REPOSITORY_OWNER || '';
+
+        const tagDisplayMap = {
+          'all': 'Full Suite',
+          'smoke': 'Smoke Tests',
+          'p0': 'P0 Tests',
+          'portfolio': 'Portfolio Tests',
+        };
+        const tagDisplay = tagDisplayMap[testTag] || testTag;
+
+        // Parse Playwright JSON report
+        let passed = 0, failed = 0, skipped = 0, duration = 0;
+        const failedTestNames = [];
+
+        if (!fs.existsSync(resultsPath)) {
+          console.log(`results.json not found at ${resultsPath} — skipping Slack notification`);
+          process.exit(0);
+        }
+
+        const report = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
+
+        // Playwright JSON report structure: { suites: [{ suites: [{ specs: [{ tests: [{ results: [] }] }] }] }] }
+        function walkSuites(suites) {
+          for (const suite of suites || []) {
+            for (const spec of suite.specs || []) {
+              for (const test of spec.tests || []) {
+                const result = test.results?.[test.results.length - 1];
+                if (!result) continue;
+                duration += result.duration || 0;
+                if (result.status === 'passed') passed++;
+                else if (result.status === 'failed' || result.status === 'timedOut') {
+                  failed++;
+                  failedTestNames.push(spec.title);
+                } else if (result.status === 'skipped') skipped++;
+              }
+            }
+            walkSuites(suite.suites);
+          }
+        }
+
+        walkSuites(report.suites);
+        duration = Math.round(duration / 1000); // ms → s
+
+        const total = passed + failed;
+        const pct = total > 0 ? Math.round((passed / total) * 100) : 0;
+        const durationFormatted = duration >= 60
+          ? `${duration}s (${Math.floor(duration / 60)}m ${duration % 60}s)`
+          : `${duration}s`;
+
+        const pagesUrl = `https://${githubOwner}.github.io/${repoName}/`;
+        const executionUrl = `${pagesUrl}execution-reports/${executionId}/`;
+        const githubRunUrl = `https://github.com/${githubOwner}/${repoName}/actions/runs/${githubRunId}`;
+
+        const testsFailed = failed > 0;
+
+        const headerText = testsFailed
+          ? `:x: *Test Execution Failed*\n*Suite:* ${tagDisplay} — ${triggerType}\n*Repository:* \`${repoName}\``
+          : `:white_check_mark: *Test Execution Passed*\n*Suite:* ${tagDisplay} — ${triggerType}\n*Repository:* \`${repoName}\``;
+
+        const resultText = testsFailed
+          ? `*Test Results:*\n:x: ${passed}/${total} passed (${pct}%)\n:warning: ${failed} failed`
+          : `*Test Results:*\n:white_check_mark: ${passed}/${total} passed (${pct}%)`;
+
+        const blocks = [
+          {
+            type: 'section',
+            text: { type: 'mrkdwn', text: headerText }
+          },
+          {
+            type: 'section',
+            fields: [
+              { type: 'mrkdwn', text: resultText },
+              { type: 'mrkdwn', text: `:stopwatch: *Duration:*\n${durationFormatted}` },
+              { type: 'mrkdwn', text: `:point_right: *Trigger:*\n${triggerType}` },
+              { type: 'mrkdwn', text: `:technologist: *Triggered By:*\n${triggeredBy}` },
+            ]
+          }
+        ];
+
+        const contextParts = [];
+        if (skipped > 0) contextParts.push(`:fast_forward: ${skipped} skipped`);
+        contextParts.push(`:id: ${executionId}`);
+        blocks.push({
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: contextParts.join(' • ') }]
+        });
+
+        if (testsFailed && failedTestNames.length > 0) {
+          const shown = failedTestNames.slice(0, 5).map(n => `:x: \`${n}\``).join('\n');
+          const extra = failedTestNames.length > 5 ? `\n... and ${failedTestNames.length - 5} more` : '';
+          blocks.push({
+            type: 'section',
+            text: { type: 'mrkdwn', text: `*Failed Tests:*\n${shown}${extra}` }
+          });
+        }
+
+        blocks.push({
+          type: 'actions',
+          elements: [
+            { type: 'button', text: { type: 'plain_text', text: '📊 View This Report' }, url: executionUrl },
+            { type: 'button', text: { type: 'plain_text', text: '📋 All Reports' }, url: pagesUrl },
+            { type: 'button', text: { type: 'plain_text', text: '🔍 GitHub Run' }, url: githubRunUrl },
+          ]
+        });
+
+        const payload = {
+          text: testsFailed
+            ? `:x: E2E Tests Failed — ${triggerType} (${failed}/${total} failed)`
+            : `:white_check_mark: E2E Tests Passed — ${triggerType}`,
+          blocks
+        };
+
+        // Send to Slack
+        const https = require('https');
+        const data = JSON.stringify(payload);
+        const url = new URL(webhookUrl);
+        const options = {
+          hostname: url.hostname,
+          path: url.pathname,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+        };
+
+        const req = https.request(options, res => {
+          console.log(res.statusCode === 200 ? '✅ Slack notification sent' : `❌ Slack returned ${res.statusCode}`);
+        });
+        req.on('error', e => console.error('❌ Error:', e.message));
+        req.write(data);
+        req.end();
+        EOF
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.slack-webhook-url }}
+        EXECUTION_ID: ${{ inputs.execution-id }}
+        REPO_NAME: ${{ inputs.repository-name }}
+        TRIGGER_TYPE: ${{ inputs.trigger-type }}
+        TRIGGERED_BY: ${{ inputs.triggered-by }}
+        TEST_TAG: ${{ inputs.test-tag }}
+        RESULTS_PATH: ${{ inputs.test-results-path }}
