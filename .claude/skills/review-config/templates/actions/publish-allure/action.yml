@@ -1,0 +1,288 @@
+name: "Publish Allure Reports"
+description: "Generate and publish Allure HTML reports to GitHub Pages with history"
+inputs:
+  allure-results-path:
+    description: "Path to the Allure JSON results"
+    required: false
+    default: "allure-results"
+  github-token:
+    description: "GitHub token for Pages deployment"
+    required: true
+  test-tag:
+    description: "Test tag for identifying execution type (smoke, p0, portfolio, all)"
+    required: false
+    default: "all"
+outputs:
+  page-url:
+    description: "URL of the published Allure report"
+    value: ${{ steps.publish.outputs.page_url }}
+  execution-id:
+    description: "Unique execution identifier"
+    value: ${{ steps.generate-id.outputs.execution_id }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate execution ID
+      id: generate-id
+      shell: bash
+      run: |
+        TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
+        SHORT_SHA=${GITHUB_SHA:0:7}
+        EXECUTION_ID="${TIMESTAMP}_${SHORT_SHA}"
+        echo "execution_id=${EXECUTION_ID}" >> $GITHUB_OUTPUT
+        echo "Generated execution ID: ${EXECUTION_ID}"
+
+    - name: Download existing gh-pages content
+      shell: bash
+      if: always()
+      run: |
+        if ! command -v jq &> /dev/null; then
+          sudo apt-get update && sudo apt-get install -y jq
+        fi
+
+        # Try to download executions.json
+        curl -s -H "Authorization: token ${{ inputs.github-token }}" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/executions.json?ref=gh-pages" \
+          | jq -r '.content' | base64 -d > executions.json 2>/dev/null || echo "[]" > executions.json
+
+        # Try to download global Allure history
+        mkdir -p temp-history
+        curl -s -H "Authorization: token ${{ inputs.github-token }}" \
+          "https://api.github.com/repos/${GITHUB_REPOSITORY}/contents/global-history?ref=gh-pages" \
+          | jq -r '.[] | select(.type=="file") | "\(.download_url) \(.name)"' > history_files.txt 2>/dev/null || true
+
+        if [ -s history_files.txt ]; then
+          while read -r url filename; do
+            curl -s "$url" -o "temp-history/$filename"
+          done < history_files.txt
+        fi
+
+    - name: Download existing execution reports from gh-pages
+      shell: bash
+      if: always()
+      run: |
+        git clone --branch gh-pages --single-branch --depth 1 \
+          "https://x-access-token:${{ inputs.github-token }}@github.com/${GITHUB_REPOSITORY}.git" \
+          gh-pages-content 2>/dev/null || true
+
+        mkdir -p execution-reports
+
+        if [ -d "gh-pages-content/execution-reports" ]; then
+          cd gh-pages-content/execution-reports
+          ls -1d */ 2>/dev/null | sort -r | head -30 | while read dir; do
+            cp -r "$dir" "../../execution-reports/"
+          done
+          cd ../..
+        fi
+
+        rm -rf gh-pages-content
+
+    - name: Setup execution directory and inject history
+      if: always()
+      shell: bash
+      run: |
+        mkdir -p execution-reports/${{ steps.generate-id.outputs.execution_id }}
+
+        if [ -d "temp-history" ] && [ "$(ls -A temp-history)" ]; then
+          cp -r temp-history ${{ inputs.allure-results-path }}/history
+        fi
+
+    - name: Cache Allure CLI
+      uses: actions/cache@v4
+      id: cache-allure
+      with:
+        path: /opt/allure-2.25.0
+        key: allure-cli-2.25.0
+
+    - name: Setup Java for Allure CLI
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Install Allure CLI
+      if: steps.cache-allure.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        wget -q https://github.com/allure-framework/allure2/releases/download/2.25.0/allure-2.25.0.tgz
+        sudo tar -zxf allure-2.25.0.tgz -C /opt/
+
+    - name: Setup Allure CLI symlink
+      shell: bash
+      run: |
+        sudo ln -sf /opt/allure-2.25.0/bin/allure /usr/bin/allure
+
+    - name: Generate environment info for Allure
+      shell: bash
+      run: |
+        ENV_FILE="${{ inputs.allure-results-path }}/environment.properties"
+        {
+          echo "Base.URL=${{ env.BASE_URL || 'https://sea-lion-app-7celq.ondigitalocean.app' }}"
+          echo "Browser=Chromium"
+          echo "Node.Version=$(node --version)"
+          echo "OS=Ubuntu Latest (GitHub Actions)"
+          echo "Test.Framework=Playwright + TypeScript"
+          echo "Repository=${{ github.repository }}"
+          echo "Branch=${{ github.ref_name }}"
+          echo "Commit=${{ github.sha }}"
+          echo "Actor=${{ github.actor }}"
+          echo "Run.ID=${{ github.run_id }}"
+          echo "Execution.ID=${{ steps.generate-id.outputs.execution_id }}"
+        } > "$ENV_FILE"
+
+    - name: Generate Allure HTML report
+      shell: bash
+      run: |
+        allure generate ${{ inputs.allure-results-path }} \
+          --output execution-reports/${{ steps.generate-id.outputs.execution_id }} \
+          --clean
+
+    - name: Update global history
+      shell: bash
+      run: |
+        mkdir -p global-history
+        if [ -d "execution-reports/${{ steps.generate-id.outputs.execution_id }}/history" ]; then
+          cp -r execution-reports/${{ steps.generate-id.outputs.execution_id }}/history/* global-history/ 2>/dev/null || true
+        fi
+
+    - name: Generate executions dashboard
+      shell: bash
+      run: |
+        EXECUTION_ID="${{ steps.generate-id.outputs.execution_id }}"
+        TEST_TAG="${{ inputs.test-tag }}"
+        GITHUB_REF="${GITHUB_REF}"
+        GITHUB_ACTOR="${GITHUB_ACTOR}"
+        GITHUB_SHA="${GITHUB_SHA}"
+
+        node << 'EOF'
+        const fs = require('fs');
+
+        const executionId = process.env.EXECUTION_ID;
+        const testTag = process.env.TEST_TAG || 'all';
+        const ref = process.env.GITHUB_REF || 'unknown';
+        const actor = process.env.GITHUB_ACTOR || 'unknown';
+        const sha = (process.env.GITHUB_SHA || 'unknown').slice(0, 7);
+
+        const tagDisplayMap = {
+          'all': 'Full Suite',
+          'smoke': 'Smoke Tests',
+          'p0': 'P0 Tests',
+          'portfolio': 'Portfolio Tests',
+        };
+        const tagDisplay = tagDisplayMap[testTag] || testTag;
+
+        // Parse timestamp from execution ID
+        let formattedDate = 'Unknown';
+        try {
+          const [datePart, timePart] = executionId.split('_');
+          const d = datePart, t = timePart;
+          formattedDate = `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)} ${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)} UTC`;
+        } catch(e) {}
+
+        // Load or initialize executions list
+        let executions = [];
+        try {
+          const raw = fs.readFileSync('executions.json', 'utf8');
+          executions = JSON.parse(raw);
+        } catch(e) {}
+
+        // Add current execution
+        executions = executions.filter(e => e.id !== executionId);
+        executions.unshift({ id: executionId, date: formattedDate, test_type: testTag, tag_display: tagDisplay, ref: ref.replace('refs/heads/', ''), actor, sha, url: `execution-reports/${executionId}/index.html` });
+        executions = executions.slice(0, 30);
+
+        fs.writeFileSync('executions.json', JSON.stringify(executions, null, 2));
+
+        const rows = executions.map((e, i) => `
+          <tr class="${i === 0 ? 'latest' : ''}">
+            <td><code>${e.id}</code></td>
+            <td>${e.tag_display}</td>
+            <td>${e.date}</td>
+            <td>${e.ref}</td>
+            <td>${e.actor}</td>
+            <td><span class="sha">${e.sha}</span></td>
+            <td><a href="${e.url}" class="link">View Report</a></td>
+          </tr>`).join('');
+
+        const html = `<!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Show me the money! — Test Reports</title>
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.1); overflow: hidden; }
+            .header { background: #1976D2; color: white; padding: 20px; text-align: center; }
+            .header h1 { margin: 0; font-size: 24px; }
+            .stats { padding: 16px 20px; background: #E3F2FD; border-bottom: 1px solid #ddd; text-align: center; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
+            th { background: #f8f9fa; font-weight: 600; }
+            tr:hover { background: #f5f5f5; }
+            tr.latest { background: #e8f5e9; }
+            .link { color: #1976D2; text-decoration: none; font-weight: 500; }
+            .link:hover { text-decoration: underline; }
+            .sha { font-family: monospace; background: #f1f3f4; padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+            .footer { padding: 16px; text-align: center; color: #666; border-top: 1px solid #ddd; font-size: 13px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>Show me the money! — E2E Test Reports</h1>
+              <p>Investment Portfolio App — Playwright + TypeScript</p>
+            </div>
+            <div class="stats">
+              <strong>Total Executions:</strong> ${executions.length} &nbsp;|&nbsp;
+              <strong>Latest:</strong> ${executions[0]?.date || 'None'}
+            </div>
+            <table>
+              <thead><tr>
+                <th>Execution ID</th><th>Test Type</th><th>Date</th>
+                <th>Branch</th><th>Triggered By</th><th>Commit</th><th>Report</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+            <div class="footer">Generated by GitHub Actions • Last updated: ${new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC</div>
+          </div>
+        </body>
+        </html>`;
+
+        fs.writeFileSync('index.html', html);
+        console.log(`Dashboard generated with ${executions.length} executions`);
+        EOF
+
+    - name: Cleanup old execution reports
+      shell: bash
+      run: |
+        if [ -d "execution-reports" ]; then
+          cd execution-reports
+          DIR_COUNT=$(ls -1 | wc -l)
+          if [ $DIR_COUNT -gt 30 ]; then
+            ls -1 | sort | head -n $((DIR_COUNT - 30)) | xargs -r rm -rf
+          fi
+          cd ..
+        fi
+
+    - name: Deploy to GitHub Pages
+      id: publish
+      uses: peaceiris/actions-gh-pages@v4
+      if: always()
+      with:
+        github_token: ${{ inputs.github-token }}
+        publish_dir: .
+        force_orphan: true
+        user_name: 'github-actions[bot]'
+        user_email: 'github-actions[bot]@users.noreply.github.com'
+        commit_message: 'Deploy report ${{ steps.generate-id.outputs.execution_id }}'
+
+    - name: Output report URLs
+      shell: bash
+      run: |
+        REPO_NAME=$(echo $GITHUB_REPOSITORY | cut -d'/' -f2)
+        PAGES_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${REPO_NAME}/"
+        EXECUTION_URL="${PAGES_URL}execution-reports/${{ steps.generate-id.outputs.execution_id }}/"
+        echo "Main dashboard: ${PAGES_URL}"
+        echo "This execution: ${EXECUTION_URL}"
