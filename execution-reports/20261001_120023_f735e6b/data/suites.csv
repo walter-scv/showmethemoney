@@ -1,0 +1,8 @@
+"Status","Start Time","Stop Time","Duration in ms","Parent Suite","Suite","Sub Suite","Test Class","Test Method","Name","Description"
+"passed","Thu Oct 01 12:00:04 UTC 2026","Thu Oct 01 12:00:07 UTC 2026","3020","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","portfolio page overview and asset detail panel @smoke @p0 @portfolio",""
+"passed","Thu Oct 01 12:00:07 UTC 2026","Thu Oct 01 12:00:13 UTC 2026","6414","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","buy new asset adds it to portfolio and shows vender spinbutton @smoke @p0 @portfolio",""
+"passed","Thu Oct 01 12:00:12 UTC 2026","Thu Oct 01 12:00:19 UTC 2026","6334","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","sell all units removes asset from portfolio and restores balance @smoke @p0 @portfolio",""
+"passed","Thu Oct 01 12:00:04 UTC 2026","Thu Oct 01 12:00:12 UTC 2026","7770","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","buy existing portfolio asset increases units and decreases balance @smoke @p0 @portfolio",""
+"passed","Thu Oct 01 12:00:03 UTC 2026","Thu Oct 01 12:00:04 UTC 2026","1435","chromium","example.spec.ts","","","","get started link",""
+"passed","Thu Oct 01 12:00:03 UTC 2026","Thu Oct 01 12:00:04 UTC 2026","945","chromium","example.spec.ts","","","","has title",""
+"passed","Thu Oct 01 12:00:13 UTC 2026","Thu Oct 01 12:00:20 UTC 2026","6269","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","buying beyond available balance results in negative balance (known bug) @p1 @portfolio",""
