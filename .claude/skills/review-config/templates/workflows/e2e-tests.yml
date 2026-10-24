@@ -1,0 +1,112 @@
+name: Show me the money! E2E Tests
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Test tag to run:'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'smoke'
+          - 'p0'
+          - 'portfolio'
+      video_mode:
+        description: 'Video recording:'
+        required: true
+        default: 'retain-on-failure'
+        type: choice
+        options:
+          - 'retain-on-failure'
+          - 'on'
+          - 'off'
+      workers:
+        description: 'Parallel workers:'
+        required: true
+        default: '2'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '4'
+          - '8'
+
+jobs:
+  test:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        id: test-execution
+        continue-on-error: true
+        env:
+          BASE_URL: ${{ vars.BASE_URL || 'https://sea-lion-app-7celq.ondigitalocean.app' }}
+          VIDEO_MODE: ${{ inputs.video_mode }}
+          WORKERS: ${{ inputs.workers }}
+        run: |
+          if [ "${{ inputs.tag }}" = "all" ]; then
+            npx playwright test --project=chromium
+          else
+            npx playwright test --project=chromium --grep "@${{ inputs.tag }}"
+          fi
+
+      - name: Upload raw results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: allure-results-${{ github.run_number }}
+          path: allure-results/
+          retention-days: 7
+
+      - name: Publish Allure Report
+        id: publish-report
+        if: always()
+        uses: ./.github/actions/publish-allure
+        with:
+          allure-results-path: allure-results
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          test-tag: ${{ inputs.tag }}
+
+      - name: Send Slack Notification
+        if: always()
+        uses: ./.github/actions/slack-notification
+        with:
+          slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          execution-id: ${{ steps.publish-report.outputs.execution-id }}
+          repository-name: ${{ github.event.repository.name }}
+          trigger-type: Manual
+          triggered-by: ${{ github.actor }}
+          test-tag: ${{ inputs.tag }}
+          test-results-path: test-results/results.json
+
+      - name: Fail job if tests failed
+        if: steps.test-execution.outcome == 'failure'
+        run: exit 1
