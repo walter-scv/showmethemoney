@@ -1,0 +1,5 @@
+https://raw.githubusercontent.com/walter-scv/showmethemoney/gh-pages/global-history/categories-trend.json categories-trend.json
+https://raw.githubusercontent.com/walter-scv/showmethemoney/gh-pages/global-history/duration-trend.json duration-trend.json
+https://raw.githubusercontent.com/walter-scv/showmethemoney/gh-pages/global-history/history-trend.json history-trend.json
+https://raw.githubusercontent.com/walter-scv/showmethemoney/gh-pages/global-history/history.json history.json
+https://raw.githubusercontent.com/walter-scv/showmethemoney/gh-pages/global-history/retry-trend.json retry-trend.json
