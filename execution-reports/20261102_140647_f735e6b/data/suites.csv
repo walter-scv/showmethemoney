@@ -1,0 +1,8 @@
+"Status","Start Time","Stop Time","Duration in ms","Parent Suite","Suite","Sub Suite","Test Class","Test Method","Name","Description"
+"passed","Mon Nov 02 14:06:30 UTC 2026","Mon Nov 02 14:06:37 UTC 2026","7125","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","buy new asset adds it to portfolio and shows vender spinbutton @smoke @p0 @portfolio",""
+"passed","Mon Nov 02 14:06:27 UTC 2026","Mon Nov 02 14:06:36 UTC 2026","9190","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","buy existing portfolio asset increases units and decreases balance @smoke @p0 @portfolio",""
+"passed","Mon Nov 02 14:06:25 UTC 2026","Mon Nov 02 14:06:27 UTC 2026","1199","chromium","example.spec.ts","","","","get started link",""
+"passed","Mon Nov 02 14:06:36 UTC 2026","Mon Nov 02 14:06:43 UTC 2026","6462","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","sell all units removes asset from portfolio and restores balance @smoke @p0 @portfolio",""
+"passed","Mon Nov 02 14:06:27 UTC 2026","Mon Nov 02 14:06:30 UTC 2026","3567","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","portfolio page overview and asset detail panel @smoke @p0 @portfolio",""
+"passed","Mon Nov 02 14:06:37 UTC 2026","Mon Nov 02 14:06:44 UTC 2026","7031","chromium","portfolio/portfolio.spec.ts","Portfolio @portfolio","","","buying beyond available balance results in negative balance (known bug) @p1 @portfolio",""
+"passed","Mon Nov 02 14:06:25 UTC 2026","Mon Nov 02 14:06:26 UTC 2026","1070","chromium","example.spec.ts","","","","has title",""
